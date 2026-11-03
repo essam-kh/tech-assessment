@@ -9,6 +9,16 @@ enum DraftField { prefix, customer, rate, taxRate, lines }
 
 const maxLineQty = 9999;
 
+String? validateTaxRate(String text) {
+  final rate = Decimal.tryParse(text.trim());
+  if (rate == null) return 'Enter a number';
+  if (rate < Decimal.zero || rate > Decimal.fromInt(100)) {
+    return 'Between 0 and 100';
+  }
+  if (rate.round(scale: 2) != rate) return 'Up to 2 decimals';
+  return null;
+}
+
 class DraftLine {
   const DraftLine({required this.item, required this.qty});
 
@@ -86,7 +96,6 @@ class InvoiceDraft {
 
   static final _prefixPattern = RegExp(r'^[A-Z]{1,6}$');
   static final _maxRate = Decimal.fromInt(100000000);
-  static final _maxTaxRate = Decimal.fromInt(100);
 
   InvoiceDraft copyWith({
     String? prefix,
@@ -160,14 +169,8 @@ class InvoiceDraft {
       errors[DraftField.rate] = 'Too large';
     }
 
-    final taxRate = this.taxRate;
-    if (taxRate == null) {
-      errors[DraftField.taxRate] = 'Enter a number';
-    } else if (taxRate < Decimal.zero || taxRate > _maxTaxRate) {
-      errors[DraftField.taxRate] = 'Between 0 and 100';
-    } else if (taxRate.round(scale: 2) != taxRate) {
-      errors[DraftField.taxRate] = 'Up to 2 decimals';
-    }
+    final taxRateError = validateTaxRate(taxRateText);
+    if (taxRateError != null) errors[DraftField.taxRate] = taxRateError;
 
     if (lines.isEmpty) {
       errors[DraftField.lines] = 'Add at least one item';

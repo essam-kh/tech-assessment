@@ -36,3 +36,8 @@ final invoiceListProvider = FutureProvider.autoDispose<List<Invoice>>((ref) {
 final invoiceProvider = FutureProvider.autoDispose.family<Invoice, String>(
   (ref, id) => ref.watch(invoiceServiceProvider).get(id),
 );
+
+final invoiceCountsProvider =
+    FutureProvider.autoDispose<Map<InvoiceStatus, int>>(
+      (ref) => ref.watch(invoiceServiceProvider).statusCounts(),
+    );

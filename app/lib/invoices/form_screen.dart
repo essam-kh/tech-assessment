@@ -332,7 +332,7 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: _TaxModeField(
+                child: TaxModeField(
                   value: _draft.taxMode,
                   onChanged: (mode) => _update(_draft.copyWith(taxMode: mode)),
                 ),
@@ -349,6 +349,7 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
                   decoration: InputDecoration(
                     labelText: 'Tax rate %',
                     errorText: errors[DraftField.taxRate],
+                    errorMaxLines: 2,
                   ),
                   onChanged: (v) => _update(_draft.copyWith(taxRateText: v)),
                 ),
@@ -486,7 +487,7 @@ class _LineTile extends StatelessWidget {
                 children: [
                   _StepButton(
                     icon: Icons.remove,
-                    tooltip: 'Less',
+                    tooltip: line.qty > 1 ? 'Less' : 'Minimum quantity is 1',
                     onPressed: line.qty > 1 ? () => onQty(line.qty - 1) : null,
                   ),
                   SizedBox(
@@ -499,7 +500,9 @@ class _LineTile extends StatelessWidget {
                   ),
                   _StepButton(
                     icon: Icons.add,
-                    tooltip: 'More',
+                    tooltip: line.qty < maxLineQty
+                        ? 'More'
+                        : 'Maximum quantity is $maxLineQty',
                     onPressed: line.qty < maxLineQty
                         ? () => onQty(line.qty + 1)
                         : null,
@@ -543,59 +546,18 @@ class _StepButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         iconSize: 18,
         tooltip: tooltip,
-        color: color,
         style: IconButton.styleFrom(
-          side: const BorderSide(color: AppColors.line),
+          foregroundColor: color ?? AppColors.ink,
+          disabledForegroundColor: AppColors.muted.withValues(alpha: 0.3),
+          side: BorderSide(
+            color: onPressed == null
+                ? AppColors.line.withValues(alpha: 0.5)
+                : AppColors.muted.withValues(alpha: 0.6),
+          ),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
         onPressed: onPressed,
         icon: Icon(icon),
-      ),
-    );
-  }
-}
-
-class _TaxModeField extends StatelessWidget {
-  const _TaxModeField({required this.value, required this.onChanged});
-
-  final TaxMode value;
-  final ValueChanged<TaxMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InputDecorator(
-      decoration: const InputDecoration(
-        labelText: 'Tax mode',
-        contentPadding: EdgeInsets.all(5),
-      ),
-      child: Row(
-        children: [
-          for (final mode in TaxMode.values)
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(6),
-                onTap: () => onChanged(mode),
-                child: Container(
-                  height: 38,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: mode == value ? AppColors.accent : null,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    mode.label,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: mode == value
-                          ? AppColors.onAccent
-                          : AppColors.muted,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

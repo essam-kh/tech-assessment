@@ -111,3 +111,49 @@ class TotalsCard extends StatelessWidget {
     );
   }
 }
+
+class TaxModeField extends StatelessWidget {
+  const TaxModeField({super.key, required this.value, required this.onChanged});
+
+  final TaxMode value;
+  final ValueChanged<TaxMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Tax mode',
+        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      ),
+      child: Row(
+        children: [
+          for (final mode in TaxMode.values)
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => onChanged(mode),
+                child: Container(
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: mode == value ? AppColors.accent : null,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    mode.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: mode == value
+                          ? AppColors.onAccent
+                          : AppColors.muted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

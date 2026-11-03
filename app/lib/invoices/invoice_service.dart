@@ -8,6 +8,8 @@ import 'invoice_model.dart';
 abstract class InvoiceService {
   Future<List<Invoice>> list({InvoiceStatus? status, String? search});
 
+  Future<Map<InvoiceStatus, int>> statusCounts();
+
   Future<Invoice> get(String id);
 
   Future<Invoice> create(NewInvoice invoice);
@@ -36,6 +38,21 @@ class SupabaseInvoiceService implements InvoiceService {
       for (final row in rows as List<dynamic>)
         _invoiceFromJson(row as Map<String, dynamic>),
     ];
+  }
+
+  @override
+  Future<Map<InvoiceStatus, int>> statusCounts() async {
+    final rows = await guardRequest(
+      () => _client.rpc('list_invoices', params: {'p_limit': 1000}),
+    );
+    final counts = {for (final status in InvoiceStatus.values) status: 0};
+    for (final row in rows as List<dynamic>) {
+      final status = InvoiceStatus.fromName(
+        (row as Map<String, dynamic>)['status'] as String,
+      );
+      counts[status] = counts[status]! + 1;
+    }
+    return counts;
   }
 
   @override
