@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/presentation/auth_providers.dart';
+import '../auth/auth_service.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -14,7 +14,7 @@ class SettingsScreen extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         children: [
           OutlinedButton(
-            onPressed: () => ref.read(authRepositoryProvider).signOut(),
+            onPressed: () => ref.read(authServiceProvider).signOut(),
             child: const Text('Log out'),
           ),
         ],

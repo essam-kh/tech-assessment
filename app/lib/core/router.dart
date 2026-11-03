@@ -4,12 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/auth/presentation/auth_providers.dart';
-import '../../features/auth/presentation/login_screen.dart';
-import '../../features/invoices/presentation/create_invoice_screen.dart';
-import '../../features/invoices/presentation/invoice_details_screen.dart';
-import '../../features/invoices/presentation/invoice_list_screen.dart';
-import '../../features/settings/presentation/settings_screen.dart';
+import '../auth/auth_service.dart';
+import '../auth/login_screen.dart';
+import '../invoices/create_screen.dart';
+import '../invoices/details_screen.dart';
+import '../invoices/list_screen.dart';
+import '../settings/settings_screen.dart';
 
 class _AuthRefresh extends ChangeNotifier {
   _AuthRefresh(Stream<bool> stream) {
@@ -35,8 +35,8 @@ String _safeReturnPath(String? from) {
   return from;
 }
 
-final routerProvider =Provider<GoRouter>((ref) {
-  final auth = ref.watch(authRepositoryProvider);
+final routerProvider = Provider<GoRouter>((ref) {
+  final auth = ref.watch(authServiceProvider);
   final refresh = _AuthRefresh(auth.authChanges());
   ref.onDispose(refresh.dispose);
 

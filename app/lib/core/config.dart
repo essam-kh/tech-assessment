@@ -11,7 +11,9 @@ class AppConfig {
   static String _require(String key) {
     final value = dotenv.env[key];
     if (value == null || value.isEmpty) {
-      throw StateError('Missing $key. Copy .env.example to .env and fill it in.');
+      throw StateError(
+        'Missing $key. Copy .env.example to .env and fill it in.',
+      );
     }
     return value;
   }

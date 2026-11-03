@@ -1,9 +1,20 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../domain/auth_repository.dart';
+import '../core/utils.dart';
 
-class SupabaseAuthRepository implements AuthRepository {
-  SupabaseAuthRepository(this._auth);
+abstract class AuthService {
+  bool get isSignedIn;
+
+  Stream<bool> authChanges();
+
+  Future<void> signIn({required String email, required String password});
+
+  Future<void> signOut();
+}
+
+class SupabaseAuthService implements AuthService {
+  SupabaseAuthService(this._auth);
 
   final GoTrueClient _auth;
 
@@ -19,15 +30,15 @@ class SupabaseAuthRepository implements AuthRepository {
     try {
       await _auth.signInWithPassword(email: email, password: password);
     } on AuthRetryableFetchException {
-      throw const AuthFailure(
+      throw const AppFailure(
         'Could not reach the server. Check your connection.',
       );
     } on AuthApiException catch (e) {
-      throw AuthFailure(_apiMessage(e));
+      throw AppFailure(_apiMessage(e));
     } on AuthException catch (e) {
-      throw AuthFailure(e.message);
+      throw AppFailure(e.message);
     } catch (_) {
-      throw const AuthFailure('Something went wrong. Try again.');
+      throw const AppFailure('Something went wrong. Try again.');
     }
   }
 
@@ -46,3 +57,7 @@ class SupabaseAuthRepository implements AuthRepository {
     return e.message;
   }
 }
+
+final authServiceProvider = Provider<AuthService>(
+  (_) => SupabaseAuthService(Supabase.instance.client.auth),
+);

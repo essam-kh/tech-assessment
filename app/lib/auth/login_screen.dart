@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_colors.dart';
-import '../domain/auth_repository.dart';
-import 'auth_providers.dart';
+import '../core/theme.dart';
+import '../core/utils.dart';
+import 'auth_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -34,9 +34,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       await ref
-          .read(authRepositoryProvider)
+          .read(authServiceProvider)
           .signIn(email: _email.text.trim(), password: _password.text);
-    } on AuthFailure catch (e) {
+    } on AppFailure catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _loading = false);

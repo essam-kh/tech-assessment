@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'core/config/app_config.dart';
-import 'core/router/app_router.dart';
-import 'core/theme/app_theme.dart';
+import 'core/config.dart';
+import 'core/router.dart';
+import 'core/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,7 +13,7 @@ Future<void> main() async {
     url: AppConfig.supabaseUrl,
     publishableKey: AppConfig.supabaseAnonKey,
   );
-  runApp(const ProviderScope(child: InvoiceApp()));
+  runApp(ProviderScope(retry: (_, _) => null, child: const InvoiceApp()));
 }
 
 class InvoiceApp extends ConsumerWidget {
