@@ -17,4 +17,7 @@ insert into items (barcode, name, unit_price) values
   ('6281007890123', 'Dish Soap 750ml',     3.10);
 
 insert into users (id, username, email)
-select id, 'essam khader', email from auth.users where email = 'essamgt123@gmail.com';
+select id, 'TestApp', email
+from auth.users
+where email = 'test-invoiceapp@gmail.com'
+on conflict (id) do nothing;
