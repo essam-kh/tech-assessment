@@ -1,5 +1,6 @@
 import 'package:decimal/decimal.dart';
 
+import '../core/utils.dart';
 import '../items/item_model.dart';
 import 'invoice_model.dart';
 import 'tax_calculator.dart';
@@ -52,6 +53,28 @@ class InvoiceDraft {
     required this.taxRateText,
     this.lines = const [],
   });
+
+  factory InvoiceDraft.fromInvoice(Invoice invoice, List<Item> items) {
+    return InvoiceDraft(
+      prefix: invoice.invoiceNo.split('-').first,
+      customer: invoice.customerName,
+      currencyCode: invoice.currencyCode,
+      rateText: plainDecimal(invoice.exchangeRate),
+      taxMode: invoice.taxMode,
+      taxRateText: plainDecimal(invoice.taxRate),
+      lines: [
+        for (final line in invoice.lines)
+          DraftLine(
+            item: items.firstWhere(
+              (item) => item.id == line.itemId,
+              orElse: () =>
+                  throw const AppFailure('An item on this invoice is missing'),
+            ),
+            qty: line.qty,
+          ),
+      ],
+    );
+  }
 
   final String prefix;
   final String customer;

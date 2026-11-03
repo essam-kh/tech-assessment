@@ -23,6 +23,7 @@ enum TaxMode {
 
 class InvoiceLine {
   const InvoiceLine({
+    required this.itemId,
     required this.itemName,
     required this.unitPrice,
     required this.qty,
@@ -31,6 +32,7 @@ class InvoiceLine {
     required this.total,
   });
 
+  final String itemId;
   final String itemName;
   final Decimal unitPrice;
   final int qty;

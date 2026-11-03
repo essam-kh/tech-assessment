@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../auth/auth_service.dart';
 import '../auth/login_screen.dart';
-import '../invoices/create_screen.dart';
 import '../invoices/details_screen.dart';
+import '../invoices/form_screen.dart';
 import '../invoices/list_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -61,11 +61,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/invoices',
         builder: (_, _) => const InvoiceListScreen(),
         routes: [
-          GoRoute(path: 'new', builder: (_, _) => const CreateInvoiceScreen()),
+          GoRoute(path: 'new', builder: (_, _) => const InvoiceFormScreen()),
           GoRoute(
             path: ':id',
             builder: (_, state) =>
                 InvoiceDetailsScreen(invoiceId: state.pathParameters['id']!),
+            routes: [
+              GoRoute(
+                path: 'edit',
+                builder: (_, state) =>
+                    InvoiceFormScreen(invoiceId: state.pathParameters['id']!),
+              ),
+            ],
           ),
         ],
       ),

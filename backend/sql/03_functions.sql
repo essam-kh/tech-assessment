@@ -28,6 +28,88 @@ begin
 end;
 $$;
 
+create or replace function check_invoice_input(
+  p_customer_name text,
+  p_currency_code text,
+  p_exchange_rate numeric,
+  p_tax_rate      numeric,
+  p_lines         jsonb
+)
+returns void
+language plpgsql
+as $$
+begin
+  if btrim(coalesce(p_customer_name, '')) = '' then
+    raise exception 'Customer name is required';
+  end if;
+  if not exists (select 1 from currencies where code = upper(p_currency_code)) then
+    raise exception 'Unknown currency';
+  end if;
+  if p_exchange_rate is null or round(p_exchange_rate, 4) <= 0 then
+    raise exception 'Exchange rate must be above 0';
+  end if;
+  if p_tax_rate is null or round(p_tax_rate, 2) < 0 or round(p_tax_rate, 2) > 100 then
+    raise exception 'Tax rate must be between 0 and 100';
+  end if;
+  if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'Add at least one item';
+  end if;
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_lines) as l(item_id uuid, qty integer)
+    where l.item_id is null or l.qty is null or l.qty < 1
+  ) then
+    raise exception 'Each line needs an item and a quantity of at least 1';
+  end if;
+end;
+$$;
+
+create or replace function save_invoice_lines(
+  p_invoice_id    uuid,
+  p_lines         jsonb,
+  p_exchange_rate numeric,
+  p_tax_mode      tax_mode,
+  p_tax_rate      numeric
+)
+returns void
+language plpgsql
+as $$
+declare
+  v_count integer;
+begin
+  insert into invoice_items (
+    invoice_id, line_no, item_id, item_name,
+    unit_price, qty, line_net, line_tax, line_total
+  )
+  select p_invoice_id, l.line_no::smallint, i.id, i.name,
+         c.unit_price, l.qty, c.line_net, c.line_tax, c.line_total
+  from (
+    select e.line_no,
+           (e.elem ->> 'item_id')::uuid as item_id,
+           (e.elem ->> 'qty')::integer  as qty
+    from jsonb_array_elements(p_lines) with ordinality as e(elem, line_no)
+  ) l
+  join items i on i.id = l.item_id
+  cross join lateral calc_line(i.unit_price, p_exchange_rate, l.qty, p_tax_mode, p_tax_rate) c;
+
+  get diagnostics v_count = row_count;
+  if v_count <> jsonb_array_length(p_lines) then
+    raise exception 'One or more items do not exist';
+  end if;
+
+  update invoices
+  set subtotal  = t.net,
+      tax_total = t.tax,
+      total     = t.total
+  from (
+    select sum(line_net) as net, sum(line_tax) as tax, sum(line_total) as total
+    from invoice_items
+    where invoice_id = p_invoice_id
+  ) t
+  where invoices.id = p_invoice_id;
+end;
+$$;
+
 create or replace function create_invoice(
   p_prefix        text,
   p_customer_name text,
@@ -46,7 +128,6 @@ declare
   v_rate     numeric := round(p_exchange_rate, 4);
   v_tax_rate numeric := round(p_tax_rate, 2);
   v_number   integer;
-  v_count    integer;
   v_invoice  invoices;
 begin
   if v_user is null then
@@ -55,28 +136,7 @@ begin
   if p_prefix is null or p_prefix !~ '^[A-Z]{1,6}$' then
     raise exception 'Prefix must be 1 to 6 capital letters';
   end if;
-  if btrim(coalesce(p_customer_name, '')) = '' then
-    raise exception 'Customer name is required';
-  end if;
-  if not exists (select 1 from currencies where code = upper(p_currency_code)) then
-    raise exception 'Unknown currency';
-  end if;
-  if v_rate is null or v_rate <= 0 then
-    raise exception 'Exchange rate must be above 0';
-  end if;
-  if v_tax_rate is null or v_tax_rate < 0 or v_tax_rate > 100 then
-    raise exception 'Tax rate must be between 0 and 100';
-  end if;
-  if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
-    raise exception 'Add at least one item';
-  end if;
-  if exists (
-    select 1
-    from jsonb_to_recordset(p_lines) as l(item_id uuid, qty integer)
-    where l.item_id is null or l.qty is null or l.qty < 1
-  ) then
-    raise exception 'Each line needs an item and a quantity of at least 1';
-  end if;
+  perform check_invoice_input(p_customer_name, p_currency_code, p_exchange_rate, p_tax_rate, p_lines);
 
   insert into invoice_sequences (user_id, prefix, year, last_number)
   values (v_user, p_prefix, v_year, 1)
@@ -94,38 +154,62 @@ begin
   )
   returning * into v_invoice;
 
-  insert into invoice_items (
-    invoice_id, line_no, item_id, item_name,
-    unit_price, qty, line_net, line_tax, line_total
-  )
-  select v_invoice.id, l.line_no::smallint, i.id, i.name,
-         c.unit_price, l.qty, c.line_net, c.line_tax, c.line_total
-  from (
-    select e.line_no,
-           (e.elem ->> 'item_id')::uuid as item_id,
-           (e.elem ->> 'qty')::integer  as qty
-    from jsonb_array_elements(p_lines) with ordinality as e(elem, line_no)
-  ) l
-  join items i on i.id = l.item_id
-  cross join lateral calc_line(i.unit_price, v_rate, l.qty, p_tax_mode, v_tax_rate) c;
+  perform save_invoice_lines(v_invoice.id, p_lines, v_rate, p_tax_mode, v_tax_rate);
 
-  get diagnostics v_count = row_count;
-  if v_count <> jsonb_array_length(p_lines) then
-    raise exception 'One or more items do not exist';
+  select * into v_invoice from invoices where id = v_invoice.id;
+  return v_invoice;
+end;
+$$;
+
+create or replace function update_invoice(
+  p_id            uuid,
+  p_customer_name text,
+  p_currency_code text,
+  p_exchange_rate numeric,
+  p_tax_mode      tax_mode,
+  p_tax_rate      numeric,
+  p_lines         jsonb
+)
+returns invoices
+language plpgsql
+as $$
+declare
+  v_user     uuid    := auth.uid();
+  v_rate     numeric := round(p_exchange_rate, 4);
+  v_tax_rate numeric := round(p_tax_rate, 2);
+  v_invoice  invoices;
+begin
+  if v_user is null then
+    raise exception 'Not signed in';
   end if;
 
-  update invoices
-  set subtotal  = t.net,
-      tax_total = t.tax,
-      total     = t.total
-  from (
-    select sum(line_net) as net, sum(line_tax) as tax, sum(line_total) as total
-    from invoice_items
-    where invoice_id = v_invoice.id
-  ) t
-  where invoices.id = v_invoice.id
-  returning invoices.* into v_invoice;
+  select * into v_invoice
+  from invoices
+  where id = p_id and created_by = v_user
+  for update;
 
+  if not found then
+    raise exception 'Invoice not found';
+  end if;
+  if v_invoice.status <> 'draft' then
+    raise exception 'Only draft invoices can be edited';
+  end if;
+
+  perform check_invoice_input(p_customer_name, p_currency_code, p_exchange_rate, p_tax_rate, p_lines);
+
+  delete from invoice_items where invoice_id = p_id;
+
+  update invoices
+  set customer_name = btrim(p_customer_name),
+      currency_code = upper(p_currency_code),
+      exchange_rate = v_rate,
+      tax_mode      = p_tax_mode,
+      tax_rate      = v_tax_rate
+  where id = p_id;
+
+  perform save_invoice_lines(p_id, p_lines, v_rate, p_tax_mode, v_tax_rate);
+
+  select * into v_invoice from invoices where id = p_id;
   return v_invoice;
 end;
 $$;

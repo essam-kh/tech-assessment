@@ -12,6 +12,8 @@ abstract class InvoiceService {
 
   Future<Invoice> create(NewInvoice invoice);
 
+  Future<Invoice> update(String id, NewInvoice invoice);
+
   Future<Invoice> approve(String id);
 
   Future<Invoice> cancel(String id, String reason);
@@ -52,6 +54,28 @@ class SupabaseInvoiceService implements InvoiceService {
         'create_invoice',
         params: {
           'p_prefix': invoice.prefix,
+          'p_customer_name': invoice.customerName,
+          'p_currency_code': invoice.currencyCode,
+          'p_exchange_rate': invoice.exchangeRate.toString(),
+          'p_tax_mode': invoice.taxMode.name,
+          'p_tax_rate': invoice.taxRate.toString(),
+          'p_lines': [
+            for (final line in invoice.lines)
+              {'item_id': line.itemId, 'qty': line.qty},
+          ],
+        },
+      ),
+    );
+    return _invoiceFromJson(json as Map<String, dynamic>);
+  }
+
+  @override
+  Future<Invoice> update(String id, NewInvoice invoice) async {
+    final json = await guardRequest(
+      () => _client.rpc(
+        'update_invoice',
+        params: {
+          'p_id': id,
           'p_customer_name': invoice.customerName,
           'p_currency_code': invoice.currencyCode,
           'p_exchange_rate': invoice.exchangeRate.toString(),
@@ -111,6 +135,7 @@ Invoice _invoiceFromJson(Map<String, dynamic> json) {
 
 InvoiceLine _lineFromJson(Map<String, dynamic> json) {
   return InvoiceLine(
+    itemId: json['item_id'] as String,
     itemName: json['item_name'] as String,
     unitPrice: decimalFromJson(json['unit_price']),
     qty: json['qty'] as int,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../core/theme.dart';
 import '../core/utils.dart';
@@ -84,6 +85,8 @@ class _InvoiceViewState extends ConsumerState<_InvoiceView> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  Future<void> _edit() => context.push('/invoices/${invoice.id}/edit');
 
   Future<void> _approve() async {
     final confirmed = await showDialog<bool>(
@@ -177,6 +180,13 @@ class _InvoiceViewState extends ConsumerState<_InvoiceView> {
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
                 child: Row(
                   children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _busy ? null : _edit,
+                        child: const Text('Edit'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton(
                         onPressed: _busy ? null : _cancel,

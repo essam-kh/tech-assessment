@@ -9,7 +9,10 @@ import '../core/utils.dart';
 import '../currencies/currency_model.dart';
 import '../currencies/currency_picker.dart';
 import '../currencies/currency_service.dart';
+import '../items/barcode_scanner.dart';
+import '../items/item_model.dart';
 import '../items/item_picker.dart';
+import '../items/item_service.dart';
 import '../settings/settings_model.dart';
 import '../settings/settings_service.dart';
 import 'invoice_draft.dart';
@@ -19,18 +22,26 @@ import 'invoice_controller.dart';
 import 'invoice_service.dart';
 import 'invoice_widgets.dart';
 
-class CreateInvoiceScreen extends ConsumerWidget {
-  const CreateInvoiceScreen({super.key});
+class InvoiceFormScreen extends ConsumerWidget {
+  const InvoiceFormScreen({super.key, this.invoiceId});
+
+  final String? invoiceId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(userSettingsProvider);
-    final currencies = ref.watch(currenciesProvider);
+    final id = invoiceId;
+    final sources = <AsyncValue<Object?>>[
+      if (id == null) ref.watch(userSettingsProvider),
+      if (id != null) ref.watch(invoiceProvider(id)),
+      if (id != null) ref.watch(itemsProvider),
+      ref.watch(currenciesProvider),
+    ];
+    final title = id == null ? 'New invoice' : 'Edit invoice';
 
-    final error = settings.error ?? currencies.error;
+    final error = sources.map((s) => s.error).nonNulls.firstOrNull;
     if (error != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('New invoice')),
+        appBar: AppBar(title: Text(title)),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -41,7 +52,12 @@ class CreateInvoiceScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: () {
-                    ref.invalidate(userSettingsProvider);
+                    if (id == null) {
+                      ref.invalidate(userSettingsProvider);
+                    } else {
+                      ref.invalidate(invoiceProvider(id));
+                      ref.invalidate(itemsProvider);
+                    }
                     ref.invalidate(currenciesProvider);
                   },
                   child: const Text('Retry'),
@@ -53,24 +69,62 @@ class CreateInvoiceScreen extends ConsumerWidget {
       );
     }
 
-    final settingsValue = settings.value;
-    final currenciesValue = currencies.value;
-    if (settingsValue == null || currenciesValue == null) {
+    if (sources.any((s) => s.value == null)) {
       return Scaffold(
-        appBar: AppBar(title: const Text('New invoice')),
+        appBar: AppBar(title: Text(title)),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    return _InvoiceForm(settings: settingsValue, currencies: currenciesValue);
+    final currencies = ref.watch(currenciesProvider).requireValue;
+    if (id == null) {
+      return _InvoiceForm(
+        initial: _draftFromSettings(
+          ref.watch(userSettingsProvider).requireValue,
+        ),
+        currencies: currencies,
+      );
+    }
+
+    final invoice = ref.watch(invoiceProvider(id)).requireValue;
+    if (invoice.status != InvoiceStatus.draft) {
+      return Scaffold(
+        appBar: AppBar(title: Text(invoice.invoiceNo)),
+        body: const Center(child: Text('Only draft invoices can be edited.')),
+      );
+    }
+    return _InvoiceForm(
+      initial: InvoiceDraft.fromInvoice(
+        invoice,
+        ref.watch(itemsProvider).requireValue,
+      ),
+      currencies: currencies,
+      invoice: invoice,
+    );
   }
 }
 
-class _InvoiceForm extends ConsumerStatefulWidget {
-  const _InvoiceForm({required this.settings, required this.currencies});
+InvoiceDraft _draftFromSettings(UserSettings settings) {
+  return InvoiceDraft(
+    prefix: 'INV',
+    customer: '',
+    currencyCode: settings.defaultCurrency,
+    rateText: settings.defaultCurrency == baseCurrencyCode ? '1' : '',
+    taxMode: settings.defaultTaxMode,
+    taxRateText: plainDecimal(settings.defaultTaxRate),
+  );
+}
 
-  final UserSettings settings;
+class _InvoiceForm extends ConsumerStatefulWidget {
+  const _InvoiceForm({
+    required this.initial,
+    required this.currencies,
+    this.invoice,
+  });
+
+  final InvoiceDraft initial;
   final List<Currency> currencies;
+  final Invoice? invoice;
 
   @override
   ConsumerState<_InvoiceForm> createState() => _InvoiceFormState();
@@ -82,20 +136,13 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
   bool _showErrors = false;
   bool _saving = false;
 
+  bool get _isEdit => widget.invoice != null;
+
   @override
   void initState() {
     super.initState();
-    final s = widget.settings;
-    final rateText = s.defaultCurrency == baseCurrencyCode ? '1' : '';
-    _rate = TextEditingController(text: rateText);
-    _draft = InvoiceDraft(
-      prefix: 'INV',
-      customer: '',
-      currencyCode: s.defaultCurrency,
-      rateText: rateText,
-      taxMode: s.defaultTaxMode,
-      taxRateText: plainDecimal(s.defaultTaxRate),
-    );
+    _draft = widget.initial;
+    _rate = TextEditingController(text: widget.initial.rateText);
   }
 
   @override
@@ -130,6 +177,24 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
     if (item != null) _update(_draft.addItem(item));
   }
 
+  Future<void> _scan() async {
+    final List<Item> items;
+    try {
+      items = await ref.read(itemsProvider.future);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failureMessage(error))));
+      return;
+    }
+    if (!mounted) return;
+    await showBarcodeScanner(
+      context,
+      items: items,
+      onItem: (item) => _update(_draft.addItem(item)),
+    );
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     if (_draft.validate().isNotEmpty) {
@@ -138,12 +203,20 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
     }
     setState(() => _saving = true);
     try {
-      final invoice = await ref
-          .read(invoiceServiceProvider)
-          .create(_draft.toNewInvoice());
-      ref.invalidate(invoiceListProvider);
-      if (!mounted) return;
-      context.pushReplacement('/invoices/${invoice.id}');
+      final service = ref.read(invoiceServiceProvider);
+      final existing = widget.invoice;
+      if (existing == null) {
+        final created = await service.create(_draft.toNewInvoice());
+        ref.invalidate(invoiceListProvider);
+        if (!mounted) return;
+        context.pushReplacement('/invoices/${created.id}');
+      } else {
+        await service.update(existing.id, _draft.toNewInvoice());
+        ref.invalidate(invoiceProvider(existing.id));
+        ref.invalidate(invoiceListProvider);
+        if (!mounted) return;
+        context.pop();
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -165,33 +238,37 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
     final decimalInput = FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('New invoice')),
+      appBar: AppBar(
+        title: Text(_isEdit ? widget.invoice!.invoiceNo : 'New invoice'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(
-                width: 96,
-                child: TextFormField(
-                  initialValue: _draft.prefix,
-                  maxLength: 6,
-                  autocorrect: false,
-                  textCapitalization: TextCapitalization.characters,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp('[A-Za-z]')),
-                    const UpperCaseFormatter(),
-                  ],
-                  decoration: InputDecoration(
-                    labelText: 'Prefix',
-                    counterText: '',
-                    errorText: errors[DraftField.prefix],
+              if (!_isEdit) ...[
+                SizedBox(
+                  width: 96,
+                  child: TextFormField(
+                    initialValue: _draft.prefix,
+                    maxLength: 6,
+                    autocorrect: false,
+                    textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp('[A-Za-z]')),
+                      const UpperCaseFormatter(),
+                    ],
+                    decoration: InputDecoration(
+                      labelText: 'Prefix',
+                      counterText: '',
+                      errorText: errors[DraftField.prefix],
+                    ),
+                    onChanged: (v) => _update(_draft.copyWith(prefix: v)),
                   ),
-                  onChanged: (v) => _update(_draft.copyWith(prefix: v)),
                 ),
-              ),
-              const SizedBox(width: 10),
+                const SizedBox(width: 10),
+              ],
               Expanded(
                 child: TextFormField(
                   initialValue: _draft.customer,
@@ -281,10 +358,24 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
           const SizedBox(height: 20),
           const SectionLabel('Items'),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _addItem,
-            icon: const Icon(Icons.add),
-            label: const Text('Add item'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _scan,
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan barcode'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _addItem,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add item'),
+                ),
+              ),
+            ],
           ),
           if (errors[DraftField.lines] != null)
             Padding(
@@ -329,7 +420,7 @@ class _InvoiceFormState extends ConsumerState<_InvoiceForm> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Save as draft'),
+                : Text(_isEdit ? 'Save changes' : 'Save as draft'),
           ),
         ),
       ),
